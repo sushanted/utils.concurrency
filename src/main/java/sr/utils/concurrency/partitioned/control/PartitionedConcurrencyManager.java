@@ -7,17 +7,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * Restrict the number of concurrent executions for id to a fixed number
  *
  * @param <T>
  */
 public class PartitionedConcurrencyManager<T> {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(PartitionedConcurrencyManager.class);
 
   private final Map<T, SlotRecord> slots = new ConcurrentHashMap<>();
   private final int concurrency;
@@ -26,24 +21,44 @@ public class PartitionedConcurrencyManager<T> {
     this.concurrency = concurrency;
   }
 
-  public Runnable getRunnable(//
+  public void runWithManagedConcurrency(//
       final T id, //
       final Runnable runnable, //
-      final Consumer<T> slotAvailabilityConsumer//
+      final Consumer<Runnable> runner//
+  //
+  ) {
+    runner.accept(//
+        getConcurrencyManagedRunnable(//
+            id, //
+            runnable, //
+            () -> runWithManagedConcurrency(//
+                id, //
+                runnable, //
+                runner//
+            )//
+        )//
+    );
+  }
+
+  public Runnable getConcurrencyManagedRunnable(//
+      final T id, //
+      final Runnable runnable, //
+      // A callback when a slot gets available
+      final Runnable slotAvailabilityRunner//
   ) {
 
-    return () -> wrapRunnable(//
+    return () -> runWrapped(//
         id, //
         runnable, //
-        slotAvailabilityConsumer//
+        slotAvailabilityRunner//
     );
 
   }
 
-  private void wrapRunnable(//
+  private void runWrapped(//
       final T id, //
       final Runnable runnable, //
-      final Consumer<T> slotAvailabilityConsumer//
+      final Runnable slotAvailabilityRunner//
   ) {
     final SlotRecord slotRecord = this.slots.compute(//
         id, //
@@ -51,34 +66,27 @@ public class PartitionedConcurrencyManager<T> {
     );
 
     if (!slotRecord.isSlotAvailable()) {
-      LOGGER.info("Slot not available for id: {} ", id);
       return;
     }
-
-    LOGGER.debug("Got slot for id {}", id);
 
     try {
       runnable.run();
     } finally {
-      processSlotAvailability(id, slotAvailabilityConsumer);
+      processSlotAvailability(id, slotAvailabilityRunner);
     }
   }
 
-  private void processSlotAvailability(final T id, final Consumer<T> slotAvailabilityConsumer) {
+  private void processSlotAvailability(//
+      final T id, //
+      final Runnable slotAvailabilityRunner//
+  ) {
     final SlotRecord returnedSlotRecord = this.slots.compute(//
         id, //
         (jid, record) -> SlotRecord.returnSlot(record)//
     );
 
     if (returnedSlotRecord != null && returnedSlotRecord.isAnythingPending()) {
-      slotAvailabilityConsumer.accept(id);
-    } else {
-      // TODO check if these logging are required
-      if (returnedSlotRecord == null) {
-        LOGGER.info("Removing record for id {}", id);
-      }
-
-      LOGGER.info("All pending tasks got slots for id {}", id);
+      slotAvailabilityRunner.run();
     }
   }
 

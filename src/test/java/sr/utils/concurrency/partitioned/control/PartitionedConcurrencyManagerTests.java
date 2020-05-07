@@ -3,7 +3,6 @@
 //*********************************************************************
 package sr.utils.concurrency.partitioned.control;
 
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -41,34 +40,17 @@ public class PartitionedConcurrencyManagerTests {
     final PartitionedConcurrencyManager<Long> concurrencyManager = new PartitionedConcurrencyManager<>(3);
 
     IntStream.range(0, 10)//
-        .map(i -> counter.incrementAndGet())//
-        .mapToLong(Long::valueOf)//
-        .mapToObj(longId -> getRunnable(counter, concurrencyManager, 99l, executorService))//
-        .forEach(executorService::submit);
+        .forEach(
+            __ -> concurrencyManager.runWithManagedConcurrency(
+                100l,
+                () -> runTask(100l, counter.incrementAndGet()),
+                executorService::submit));
 
     System.in.read();
 
   }
 
-  private Runnable getRunnable(//
-      final AtomicInteger counter, //
-      final PartitionedConcurrencyManager<Long> concurrencyManager, //
-      final Long id, //
-      final ExecutorService executorService) {
 
-    return concurrencyManager.getRunnable(//
-        (long) id, //
-        () -> runTask(id, counter.incrementAndGet()), //
-        // It is meant to be recursive for chaining purpose
-        jobId -> executorService.submit(//
-            getRunnable(//
-                counter, //
-                concurrencyManager, //
-                jobId, //
-                executorService)//
-        )//
-    );
-  }
 
   public void runTask(//
       final long jobId, //
@@ -81,7 +63,7 @@ public class PartitionedConcurrencyManagerTests {
             i -> System.out.println("Running job with id " + jobId + " for invocation number " + invocationNumber)//
         );
 
-    System.out.println("Task complete");
+    System.out.println("Task complete for " + invocationNumber);
   }
 
   public static int sleep(final int millis) {
