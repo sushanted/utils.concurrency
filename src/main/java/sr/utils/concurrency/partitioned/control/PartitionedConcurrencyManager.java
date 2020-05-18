@@ -1,6 +1,3 @@
-//*********************************************************************
-//Copyright 2019 VMware, Inc.  All rights reserved. VMware Confidential
-//*********************************************************************
 package sr.utils.concurrency.partitioned.control;
 
 import java.util.Map;
